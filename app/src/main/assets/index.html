@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>SzaTube</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#0f0f0f;color:#f1f1f1;font-family:system-ui,-apple-system,sans-serif;padding-bottom:80px}
+header{position:sticky;top:0;background:#0f0f0f;border-bottom:1px solid #272727;z-index:100;padding:12px 16px;display:flex;align-items:center;gap:12px}
+.logo{font-weight:800;font-size:20px}.logo span{color:#f03}
+.search{flex:1;max-width:400px;margin-inline:auto}
+.search input{width:100%;padding:8px 16px;background:#121212;border:1px solid #303030;color:#fff;border-radius:20px;outline:none;font-size:14px}
+.tabs{display:flex;background:#181818;position:sticky;top:53px;z-index:99;border-bottom:1px solid #272727}
+.tab{flex:1;background:none;color:#aaa;border:none;padding:14px 8px;cursor:pointer;font-size:14px;border-bottom:3px solid transparent;font-family:inherit}
+.tab.active{color:#fff;border-bottom-color:#f03}
+.upload-bar{padding:12px;background:#181818;border-bottom:1px solid #272727;display:none}
+.upload-bar.on{display:block}
+.upload-bar button{width:100%;padding:14px;background:#f03;color:#fff;border:none;border-radius:10px;font-size:16px;cursor:pointer;font-weight:bold;font-family:inherit}
+.grid{display:grid;grid-template-columns:1fr;gap:12px;padding:12px}
+@media(min-width:520px){.grid{grid-template-columns:repeat(2,1fr)}}
+.card{background:#181818;border-radius:12px;overflow:hidden;cursor:pointer}
+.card:active{transform:scale(.98)}
+.thumb{width:100%;aspect-ratio:16/9;background:#222 center/cover;position:relative;display:flex;align-items:center;justify-content:center;color:#555;font-size:40px}
+.card h3{font-size:14px;padding:10px;line-height:1.4;max-height:60px;overflow:hidden}
+.meta{color:#aaa;font-size:12px;padding:0 10px 10px}
+.del-btn{position:absolute;top:6px;left:6px;background:rgba(255,0,51,.9);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:16px;z-index:5}
+.player{position:fixed;inset:0;background:#000;z-index:200;display:none;overflow-y:auto}
+.player.on{display:block}
+.back{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.7);color:#fff;border:none;padding:8px 14px;border-radius:20px;cursor:pointer;z-index:10;font-family:inherit}
+video{width:100%;display:block;background:#000;max-height:70vh}
+.vinfo{padding:16px}
+.vinfo h2{font-size:18px;margin-bottom:8px;line-height:1.4}
+.empty{padding:60px 20px;text-align:center;color:#888}
+.empty h3{margin-bottom:10px;color:#ccc}
+.toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#f03;color:#fff;padding:12px 24px;border-radius:24px;z-index:999;display:none;font-size:14px}
+.toast.on{display:block}
+</style></head><body>
+
+<header>
+  <div class="logo">Sza<span>Tube</span></div>
+  <div class="search"><input id="q" placeholder="بحث..." oninput="render()"></div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="setTab('sza')" id="tab-sza">قناة SZA</button>
+  <button class="tab" onclick="setTab('mine')" id="tab-mine">قناتي</button>
+  <button class="tab" onclick="setTab('upload')" id="tab-upload">رفع</button>
+</div>
+
+<div class="upload-bar" id="upload-bar">
+  <button onclick="upload()">📤 اختر فيديو لرفعه</button>
+</div>
+
+<div class="grid" id="grid"><div class="empty"><h3>جاري التحميل...</h3></div></div>
+
+<div class="player" id="player">
+  <button class="back" onclick="closeP()">✕ رجوع</button>
+  <video id="v" controls playsinline></video>
+  <div class="vinfo"><h2 id="pt"></h2></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let tab="sza", sza=[], mine=[];
+
+function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("on");setTimeout(()=>t.classList.remove("on"),2500);}
+
+function loadSza(){
+  try{
+    const raw = Android.listSzaVideos();
+    sza = JSON.parse(raw).map(v=>({id:v.id, name:v.name, path:v.path, title:v.id}));
+  }catch(e){ sza=[]; }
+}
+
+function loadMine(){
+  try{
+    const raw = Android.listMyVideos();
+    mine = JSON.parse(raw).map(v=>({id:v.id, name:v.name, path:v.path, title:v.id}));
+  }catch(e){ mine=[]; }
+}
+
+function setTab(t){
+  tab=t;
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  document.getElementById("tab-"+t).classList.add("active");
+  document.getElementById("upload-bar").classList.toggle("on", t==="upload");
+  render();
+}
+
+function render(){
+  const g=document.getElementById("grid");
+  const q=(document.getElementById("q").value||"").trim().toLowerCase();
+
+  if(tab==="upload"){
+    g.innerHTML='<div class="empty"><h3>📤 ارفع فيديوهاتك</h3><p>اضغط الزر الأحمر لاختيار فيديو من هاتفك</p></div>';
+    return;
+  }
+
+  let list = (tab==="sza") ? sza : mine;
+  if(q) list = list.filter(v=>(v.title||"").toLowerCase().includes(q));
+
+  if(!list.length){
+    g.innerHTML='<div class="empty"><h3>لا يوجد فيديوهات</h3><p>'+(tab==="sza"?"جاري التنزيل...":"ارفع فيديو من تبويب رفع")+'</p></div>';
+    return;
+  }
+
+  g.innerHTML="";
+  list.forEach(v=>{
+    const c=document.createElement("div");
+    c.className="card";
+    const thumb = "file:///sdcard/sza_tube/media/thumbs/"+v.id+".jpg";
+    let delBtn = "";
+    if(tab==="mine"){
+      delBtn = '<button class="del-btn" onclick="del(event,\''+v.name+'\')">🗑</button>';
+    }
+    c.innerHTML = delBtn + '<div class="thumb" style="background-image:url(\''+thumb+'\')"></div>' +
+      '<h3>'+v.title+'</h3>';
+    c.onclick=()=>open(v);
+    g.appendChild(c);
+  });
+}
+
+function open(v){
+  document.getElementById("player").classList.add("on");
+  document.getElementById("pt").textContent=v.title;
+  const video=document.getElementById("v");
+  video.src = v.path;
+  video.play().catch(()=>{});
+}
+
+function closeP(){
+  document.getElementById("player").classList.remove("on");
+  document.getElementById("v").pause();
+}
+
+function upload(){ Android.pickVideo(); }
+
+function del(e, name){
+  e.stopPropagation();
+  if(!confirm("حذف "+name+"؟")) return;
+  if(Android.deleteVideo(name)){
+    toast("✅ تم الحذف");
+    loadMine(); render();
+  } else {
+    toast("❌ فشل الحذف");
+  }
+}
+
+function onUploaded(name){
+  toast("✅ تم رفع: "+name);
+  loadMine();
+  setTab("mine");
+}
+
+loadSza();
+loadMine();
+render();
+setInterval(function(){ loadSza(); loadMine(); render(); }, 30000);
+</script></body></html>
